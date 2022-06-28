@@ -26,20 +26,44 @@ const defaultUrl =
   typeof window !== "undefined" &&
   new URL(window.location.href).searchParams.get("url");
 
+function parseHeadersFromQp(qp: URLSearchParams): Headers {
+  const headers = new Headers();
+  qp.forEach((value, key) => {
+    if (key === "headers") {
+      const [name, header] = value.split("=");
+      if (name && header) {
+        headers.set(name, header);
+      }
+    }
+  });
+  return headers;
+}
+
 function Form() {
   const [current, setCurrent] = useState(() => ({
-    request: new Request(defaultUrl || "https://example.vercel.sh/"),
+    request: new Request(defaultUrl || "https://example.vercel.sh/", {
+      headers:
+        typeof window === "undefined"
+          ? undefined
+          : parseHeadersFromQp(new URL(window.location.href).searchParams),
+    }),
     abortController: new AbortController(),
   }));
   const [data, setData] = useState<DataItem[]>([]);
   const router = useRouter();
+  const [numberOfHeaders, setNumberOfHeaders] = useState(0);
 
   const setUrl = (request: Request) => {
     setCurrent({ request, abortController: new AbortController() });
   };
 
   useEffect(() => {
-    router.push(`/?url=${encodeURIComponent(current.request.url)}`, undefined, {
+    const qp = new URLSearchParams();
+    current.request.headers.forEach((value, key) => {
+      qp.append(`headers`, `${key}=${value}`);
+    });
+    qp.set("url", current.request.url);
+    router.push(`/?${qp}`, undefined, {
       shallow: true,
     });
     setData([]);
@@ -91,15 +115,43 @@ function Form() {
           e.preventDefault();
           const formData = new FormData(e.currentTarget);
           const url = formData.get("url") as string;
-          setUrl(new Request(url));
+          const headers = formData.getAll("headers");
+          const headersArray = headers
+            .map((x) => String(x).split("="))
+            .filter((x): x is [string, string] => x.length === 2);
+          setUrl(
+            new Request(url, {
+              headers: headersArray,
+            })
+          );
         }}
       >
-        <input
-          name="url"
-          type="url"
-          placeholder="url"
-          defaultValue={current.request.url}
-        />
+        <fieldset>
+          <input
+            name="url"
+            type="url"
+            placeholder="url"
+            defaultValue={current.request.url}
+          />
+          {Array.from({ length: numberOfHeaders }, (_, i) => {
+            return (
+              <li key={i}>
+                <input name="headers" placeholder="HEADER=VALUE" />
+              </li>
+            );
+          })}
+          <div>
+            <button
+              type="button"
+              onClick={() => setNumberOfHeaders((i) => i + 1)}
+            >
+              add header
+            </button>
+          </div>
+          <div>
+            <button type="submit">submit</button>
+          </div>
+        </fieldset>
       </form>
       <h2>data</h2>
       <ul>
