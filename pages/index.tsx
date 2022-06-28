@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useRouter } from "../node_modules/next/router";
 
 export default function Index() {
   return (
@@ -14,6 +15,7 @@ type DataItem =
       message: string;
       date: Date;
     }
+  | { type: "headers"; headers: [string, string][]; date: Date }
   | {
       type: "chunk";
       data: string;
@@ -30,30 +32,33 @@ function Form() {
     abortController: new AbortController(),
   }));
   const [data, setData] = useState<DataItem[]>([]);
+  const router = useRouter();
 
   const setUrl = (request: Request) => {
     setCurrent({ request, abortController: new AbortController() });
   };
 
   useEffect(() => {
+    router.push(`/?url=${encodeURIComponent(current.request.url)}`, undefined, {
+      shallow: true,
+    });
     setData([]);
+
     fetch(current.request, {
       signal: current.abortController.signal,
     }).then(
       async (response) => {
-        const headersString =
-          "HEADERS:\n" +
-          [...response.headers]
-            .map(([key, value]) => `${key}: ${value}`)
-            .join("\n");
         setData((d) => [
           ...d,
-          { type: "chunk", data: headersString, date: new Date() },
+          { type: "headers", headers: [...response.headers], date: new Date() },
         ]);
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         while (true) {
+          if (current.abortController.signal.aborted) {
+            return;
+          }
           const read = await reader.read();
           if (read.value) {
             const data = decoder.decode(read.value);
@@ -105,6 +110,22 @@ function Form() {
                 <span style={{ color: "red", fontWeight: "bold" }}>
                   ERROR: ${item.message}
                 </span>
+              ) : item.type === "headers" ? (
+                <table>
+                  <thead>
+                    <tr>
+                      <td colSpan={2}>headers</td>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {item.headers.map(([key, value], index) => (
+                      <tr key={index}>
+                        <td style={{ opacity: 0.5 }}>{key}</td>
+                        <td>{value}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               ) : (
                 <code title={item.date.toISOString()}>{item.data}</code>
               )}
